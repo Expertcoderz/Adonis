@@ -114,7 +114,7 @@ local logError = function(plr, err)
 	end
 
 	if server.Core and server.Core.DebugMode then
-		warn(`::Adonis:: Error: {plr}: {err}`)
+		warn(`:: Adonis :: Error: {plr}: {err}`)
 	end
 
 	if server and server.Logs then
@@ -310,7 +310,7 @@ locals = {
 	Pcall = Pcall;
 };
 
-service = require(Folder.Shared.Service)(function(eType, msg, desc, ...)
+service = require(Folder.Parent.Shared.Service)(function(eType, msg, desc, ...)
 	local extra = table.pack(...)
 	if eType == "MethodError" then
 		if server and server.Logs and server.Logs.AddLog then
@@ -468,7 +468,7 @@ return service.NewProxy({
 					if not m or m.Parent ~= service.RunService then
 						connection1:Disconnect()
 						connection2:Disconnect()
-						warn("Adonis module mutex removed; Regenerating...")
+						--warn("Adonis module mutex removed; Regenerating...")
 						mutex = mutexBackup:Clone()
 						mutex.Archivable = false
 						mutex.Parent = service.RunService
@@ -476,10 +476,11 @@ return service.NewProxy({
 					end
 				end)
 				connection2 = m:GetPropertyChangedSignal("Name"):Connect(function()
-					if m and m.Name ~= "__Adonis_MODULE_MUTEX" then
-						warn("Adonis module mutex renamed; Refreshing...")
-						m.Name = "__Adonis_MODULE_MUTEX"
-					end
+					pcall(function()
+						if m and m.Name ~= "__Adonis_MODULE_MUTEX" then
+							m.Name = "__Adonis_MODULE_MUTEX"
+						end
+					end)
 				end)
 			end
 			makePersistent(mutex)
@@ -503,6 +504,13 @@ return service.NewProxy({
 			if not silentStartup then
 				warn("Currently using Adonis Nightly MainModule; intended for testing & development only!")
 			end
+		end
+
+		if data.NightlyMode then -- Wrap things that should be wrapped?
+			for _, v in {"Folder", "Deps", "CommandModules", "Client", "Dependancies", "PluginsFolder"} do
+				server[v] = service.Wrap(server[v])
+			end
+			locals.Folder = service.Wrap(locals.Folder)
 		end
 
 		if data.DebugMode == true then
@@ -535,7 +543,7 @@ return service.NewProxy({
 		server.LoadPackage = LoadPackage
 		server.ServiceSpecific = ServiceSpecific
 
-		server.Shared = Folder.Shared
+		server.Shared = Folder.Parent.Shared
 		server.ServerPlugins = data.ServerPlugins
 		server.ClientPlugins = data.ClientPlugins
 		server.Client = Folder.Parent.Client
@@ -548,16 +556,8 @@ return service.NewProxy({
 			--script:Destroy() -- Unnecessary and potentially harmful?
 		end
 
-		--// Copy client themes, plugins, and shared modules to the client folder
+		--// Copy client themes and plugins modules to the client folder
 		local packagesToRunWithPlugins = {}
-		local shared = service.New("Folder", {
-			Name = "Shared";
-			Parent = server.Client;
-		})
-
-		for _, module in ipairs(Folder.Shared:GetChildren()) do
-			module:Clone().Parent = shared
-		end
 
 		for _, module in ipairs(data.ClientPlugins or {}) do
 			if type(module) ~= "string" then
@@ -595,6 +595,22 @@ return service.NewProxy({
 			if server.Descriptions[desc] == nil then
 				server.Descriptions[desc] = value
 			end
+		end
+
+		--// Attempts to patch Settings.Prefix to fix issues
+		if type(server.Settings.Prefix) == "table" then -- TODO: Move to backwards compatibility module?
+			setmetatable(server.Settings.Prefix, {
+				__concat = function(self, value)
+					return `{self[1]}{value}`
+				end,
+				__tostring = function(self)
+					return self[1]
+				end,
+				__index = string, -- Fix backwards compatibility for namecall usage of prefix
+				__eq = function(self, v)
+					return rawequal(self, v) or table.find(self, v) or service.CompareTables(self, v) or false
+				end,
+			})
 		end
 
 		--// Bind cleanup

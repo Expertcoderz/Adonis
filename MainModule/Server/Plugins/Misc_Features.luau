@@ -8,18 +8,18 @@ return function(Vargs, GetEnv)
 	local Functions, Commands, Admin, Anti, Core, HTTP, Logs, Remote, Process, Variables, Deps =
 		server.Functions, server.Commands, server.Admin, server.Anti, server.Core, server.HTTP, server.Logs, server.Remote, server.Process, server.Variables, server.Deps
 
-	-- // Remove legacy trello board
-	local epix_board_index = type(Settings.Trello_Secondary) == "table" and table.find(Settings.Trello_Secondary, "9HH6BEX2")
-	
-	if epix_board_index then
-		table.remove(Settings.Trello_Secondary, epix_board_index)
-		Logs:AddLog("Script", "Removed legacy trello board")
-	end
-
 	--// AutoClean
 	if Settings.AutoClean then
 		service.StartLoop("AUTO_CLEAN", Settings.AutoCleanDelay, Functions.CleanWorkspace, true)
 		Logs:AddLog("Script", `Started autoclean with {Settings.AutoCleanDelay}s delay`)
+	end
+
+	-- // Add legacy donors
+	Variables.OldDonorList = select(2, xpcall(require, warn, server.Deps.LegacyDonors)) or {}
+	for _, v in Variables.OldDonorList do
+		if v.Id then
+			Variables.CachedDonors[tostring(v.Id)] = os.time()
+		end
 	end
 
 	-- // Backwards compatibility
@@ -53,6 +53,9 @@ return function(Vargs, GetEnv)
 			Logs:AddLog("Script", `Attempted to add {ind} to legacy Remote.Unencrypted. Moving to Remote.Commands`)
 		end
 	})
+	if service.Wrapped(server.Folder) then
+		server.Folder:SetSpecial("Shared", server.Shared)
+	end
 	Functions.GetRandom = function(pLen)
 		local random = math.random
 		local format = string.format
@@ -71,6 +74,17 @@ return function(Vargs, GetEnv)
 	for _, rank in {"Owners", "HeadAdmins", "Admins", "Moderators", "Creators"} do
 		if Settings[rank] and not Settings.CustomRanks[rank] then
 			Settings.Ranks[if rank == "Owners" then "HeadAdmins" else rank].Users = Settings[rank]
+		end
+	end
+	if Settings.CustomRanks then
+		local Ranks = Settings.Ranks
+		for name, users in Settings.CustomRanks do
+			if not Ranks[name] then
+				Ranks[name] = {
+					Level = 1;
+					Users = users;
+				}
+			end
 		end
 	end
 	for k, v in {-- Legacy aliases

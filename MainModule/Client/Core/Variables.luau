@@ -76,6 +76,7 @@ return function(Vargs, GetEnv)
 		ParticlesEnabled = true;
 		CapesEnabled = true;
 		HideChatCommands = false;
+		KeepWindowWidthOnMinimize = false;
 		CanUseEditableImages = false; -- TODO: Pool from FFlag
 		Particles = {};
 		KeyBinds = {};
@@ -111,5 +112,6 @@ return function(Vargs, GetEnv)
 			Haze = atmosphere and atmosphere.Haze,
 		};
 		KeycodeNames = require(client.Shared.KeycodeNames);
+		HelpButtonAction = "Info",
 	};
 end

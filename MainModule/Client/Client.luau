@@ -128,10 +128,10 @@ end
 --// Logging
 local clientLog = {}
 local dumplog = function()
-	warn("Dumping client log...")
+	print("Dumping client log...")
 
 	for _, v in clientLog do
-		warn(v)
+		print(v)
 	end
 end
 local log = function(...)
@@ -139,17 +139,17 @@ local log = function(...)
 end
 
 --// Dump log on disconnect
+local Folder = script.Parent
 local isStudio = game:GetService("RunService"):IsStudio()
 game:GetService("NetworkClient").ChildRemoved:Connect(function(p)
-	if not isStudio then
-		warn("~! PLAYER DISCONNECTED/KICKED! DUMPING ADONIS CLIENT LOG!")
+	if not isStudio or Folder:FindFirstChild("ADONIS_DEBUGMODE_ENABLED") then
+		print("~! PLAYER DISCONNECTED/KICKED! DUMPING ADONIS CLIENT LOG!")
 		dumplog()
 	end
 end)
 
 local unique = {}
 local origEnv = getfenv()
-local Folder = script.Parent
 setfenv(1, setmetatable({}, { __metatable = unique }))
 local startTime = time()
 local oldInstNew = Instance.new
@@ -170,9 +170,10 @@ end
 
 local function logError(...)
 	warn("ERROR: ", ...)
+	table.insert(clientLog, table.concat({"ERROR:", ...}, " "))
 
 	if client and client.Remote then
-		client.Remote.Send("LogError", table.concat({ ... }, " "))
+		client.Remote.Send("LogError", table.concat({...}, " "))
 	end
 end
 
@@ -202,32 +203,37 @@ local Immutable = function(...)
 end
 
 local Kill
-local Fire, Detected = nil, nil
+local Fire, Detected, Kick = nil, nil, nil
 do
 	Kill = Immutable(function(info)
 		--if true then print(info or "SOMETHING TRIED TO CRASH CLIENT?") return end
-		spawn(pcall, function()
-			if Detected then
-				Detected("kick", info)
-			elseif Fire then
-				Fire("BadMemes", info)
-			end
-		end)
+		if type(info) == "string" then
+			task.spawn(pcall, function()
+				if Detected then
+					Detected("kick", info)
+				elseif Fire then
+					Fire("BadMemes", info)
+				end
+			end)
+		end
 
-		spawn(pcall, function()
+		task.spawn(pcall, function()
 			task.wait(1)
+			task.spawn(pcall, Kick, service.Player, info)
 			service.Player:Kick(info)
 		end)
 
 		if not isStudio then
-			spawn(pcall, function()
+			task.spawn(pcall, function()
 				task.wait(5)
-				while true do
-					pcall(task.spawn, function()
-						task.spawn(Kill())
-						-- memes
-					end)
+				task.spawn(pcall, function() task.wait(5) while true do continue end end)
+				if client.Core and client.Core.RemoteEvent then
+					task.spawn(pcall, table.clear, client.Core.RemoteEvent)
+					task.spawn(pcall, table.freeze, client.Core.RemoteEvent)
+					client.Core.RemoteEvent = nil
 				end
+
+				while true do continue end
 			end)
 		end
 	end)
@@ -327,19 +333,19 @@ client = setmetatable({
 	--Kill = Kill;
 	}, {
 	  __index = function(self, ind)
-	    if ind == "Kill" then
- 	     local ran, func = pcall(function()
-	        return Kill()
-	      end)
+		if ind == "Kill" then
+			local ran, func = pcall(function()
+				return Kill()
+			end)
 
-	      if not ran or type(func) ~= "function" then
- 		   	service.Players.LocalPlayer:Kick("1x00353 Adonis (PlrClientIndexKlErr)")
-	        warn("Failed to retrieve Kill function")
-  	      return function() end
-    	  end
+			if not ran or type(func) ~= "function" then
+				service.Players.LocalPlayer:Kick("1x00353 Adonis (PlrClientIndexKlErr)")
+				print("Failed to retrieve Kill function")
+				return function() end
+			end
 
-   	   return func
-  	  end
+			return func
+		end
 	end,
 })
 
@@ -358,7 +364,7 @@ locals = {
 
 log("Create service metatable")
 
-service = require(Folder.Shared.Service)(function(eType, msg, desc, ...)
+service = require(Folder.Parent.Shared.Service)(function(eType, msg, desc, ...)
 	--warn(eType, msg, desc, ...)
 	local extra = { ... }
 	if eType == "MethodError" then
@@ -537,11 +543,20 @@ return service.NewProxy({
 			data.DebugMode = false
 		end
 
+		log("Adding ACLI logs to the client logs")
+		if data.acliLogs then
+			for _, v in data.acliLogs do
+				log(v)
+			end
+		end
+
+		log("Clearing environment")
 		setfenv(1, setmetatable({}, { __metatable = unique }))
 
+		log("Loading necessary client values")
 		client.Folder = Folder
 		client.UIFolder = Folder:WaitForChild("UI", 9e9)
-		client.Shared = Folder:WaitForChild("Shared", 9e9)
+		client.Shared = Folder.Parent:WaitForChild("Shared", 9e9)
 
 		client.Loader = data.Loader
 		client.Module = data.Module
@@ -572,11 +587,13 @@ return service.NewProxy({
   	  	  	end
 	  	end
 
+		log("Formatting chatlogs")
 		for i, line in ipairs(client.Changelog) do
         	client.FormattedChangelog[i] = applyColour(line)
   	 	end
 
 		--// Setup MatIcons
+		log("Setting up material icons")
 		do
 			local MaterialIcons = oldReq(service_UnWrap(client.Shared.MatIcons))
 			client.MatIcons = setmetatable({}, {
@@ -676,6 +693,9 @@ return service.NewProxy({
 		client.Finish_Loading = function()
 			log("Client fired finished loading")
 			if client.Core.Key then
+				--// Push Remote & Anti related functions for Kill
+				Fire, Detected, Kick = client.Remote and client.Remote.Fire, client.Anti and client.Anti.Detected, service.Player.kick
+
 				--// Run anything from core modules that needs to be done after the client has finished loading
 				log("~! Doing run after loaded")
 				for _, f in runAfterLoaded do
